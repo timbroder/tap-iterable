@@ -34,7 +34,7 @@ class Iterable(object):
     total_days = (utils.strptime_with_tz(end_date) - utils.strptime_with_tz(start_date)).days
     if total_days >= self.api_window_in_days:
       for n in range(int(total_days / self.api_window_in_days)):
-        yield (utils.strptime_with_tz(start_date) + n * timedelta(int(self.api_window_in_days))).strftime("%Y-%m-%d %H:%M:%S")
+        yield (utils.strptime_with_tz(start_date) + n * timedelta(self.api_window_in_days)).strftime("%Y-%m-%d %H:%M:%S")
     else:
       yield start_date
 
