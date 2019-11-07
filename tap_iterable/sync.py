@@ -1,7 +1,6 @@
-
-# 
+#
 # Module dependencies.
-# 
+#
 
 import json
 import singer
@@ -27,6 +26,3 @@ def sync_stream(state, instance):
             singer.write_state(state)
 
         return counter.value
-
-
-

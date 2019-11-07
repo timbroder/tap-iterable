@@ -1,4 +1,3 @@
-
 #
 # Module dependencies.
 #
@@ -48,17 +47,17 @@ class Iterable(object):
     logger.info("Received 429 -- sleeping for %s seconds",
                 details['wait'])
 
-  # 
+  #
   # The actual `get` request.
-  # 
-  
+  #
+
   @backoff.on_exception(backoff.expo,
                         requests.exceptions.HTTPError,
                         on_backoff=retry_handler,
                         max_tries=10)
   def _get(self, path, stream=True, **kwargs):
     uri = "{uri}{path}".format(uri=self.uri, path=path)
-    
+
     # Add query params, including `api_key`.
     params = { "api_key": self.api_key }
     for key, value in kwargs.items():
@@ -73,7 +72,7 @@ class Iterable(object):
   #
   # The common `get` request.
   #
-  
+
   def get(self, path, **kwargs):
     response = self._get(path, **kwargs)
     return response.json()
@@ -85,9 +84,9 @@ class Iterable(object):
   def get_user_fields(self):
     return self.get("users/getFields")
 
-  # 
+  #
   # Methods to retrieve data per stream/resource.
-  # 
+  #
 
   def lists(self, column_name=None, bookmark=None):
     res = self.get("lists")
@@ -166,9 +165,3 @@ class Iterable(object):
       def get_data():
         return self._get("export/data.json", dataTypeName=data_type_name, **kwargs)
       yield get_data
-
-
-
-
-
-

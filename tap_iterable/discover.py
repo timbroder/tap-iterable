@@ -1,7 +1,6 @@
-
-# 
+#
 # Module dependencies.
-# 
+#
 
 import os
 import json
@@ -22,7 +21,7 @@ def discover_streams(client):
       res = s.client.get_user_fields()
       fields = res["fields"]
       # Merge `fields` with schema.
-      field_schema = translate_to_schema(fields)     
+      field_schema = translate_to_schema(fields)
       schema = merge(schema, field_schema)
 
     streams.append({'stream': s.name, 'tap_stream_id': s.name, 'schema': schema, 'metadata': s.load_metadata()})
@@ -30,7 +29,7 @@ def discover_streams(client):
 
 #
 # Helper function to infer schema datatype.
-# 
+#
 
 def get_schema_datatype(v):
   NUMBER_TYPES = set([
@@ -75,9 +74,9 @@ def get_schema_datatype(v):
 
   return datatype
 
-# 
+#
 # Helper function to translate `user.fields` => singer schema.
-# 
+#
 
 def translate_to_schema(fields):
   schema = {
@@ -119,4 +118,3 @@ def merge(left, right):
       merged[table_key] = right[table_key]
 
   return merged
-
