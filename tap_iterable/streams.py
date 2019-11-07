@@ -1,7 +1,6 @@
-
-# 
+#
 # Module dependencies.
-# 
+#
 
 import os
 import json
@@ -9,6 +8,7 @@ import datetime
 import pytz
 import singer
 import time
+import tempfile
 from singer import metadata
 from singer import utils
 from singer.metrics import Point
@@ -86,10 +86,6 @@ class Stream():
         return utils.strptime_with_tz(value_in_date_time) > utils.strptime_with_tz(current_bookmark)
 
 
-    def get_replication_value(self, item):
-        return item[self.replication_key]
-
-
     def load_schema(self):
         schema_file = "schemas/{}.json".format(self.name)
         with open(get_abs_path(schema_file)) as f:
@@ -98,10 +94,9 @@ class Stream():
 
 
     def load_metadata(self):
-        return metadata.get_standard_metadata(schema=self.load_schema(), 
-                                              schema_name=self.name, 
-                                              key_properties=self.key_properties, 
-                                              valid_replication_keys=[self.replication_key], 
+        return metadata.get_standard_metadata(schema=self.load_schema(),
+                                              key_properties=self.key_properties,
+                                              valid_replication_keys=[self.replication_key],
                                               replication_method=self.replication_method)
 
 
@@ -114,13 +109,50 @@ class Stream():
         if self.replication_method == "INCREMENTAL":
             # These streams results are not ordered, so store highest value bookmark in session.
             for item in res:
-                self.update_session_bookmark(self.get_replication_value(item))
+                self.update_session_bookmark(item[self.replication_key])
                 yield (self.stream, item)
             self.update_bookmark(state, self.session_bookmark)
 
         else:
             for item in res:
                 yield (self.stream, item)
+
+
+    def sync_data_export(self, state):
+        get_generator = getattr(self.client, "get_data_export_generator")
+        bookmark = self.get_bookmark(state)
+        fns = get_generator(self.data_type_name, bookmark)
+        for fn in fns:
+            res = fn()
+            count = 0
+            start_time = time.time()
+            with tempfile.NamedTemporaryFile() as tf:
+                for item in res.iter_lines():
+                    if item:
+                        tf.write(item)
+                        count += 1
+                        tf.write(b'\n')
+                write_time = time.time()
+                logger.info('wrote {} records to temp file in {} seconds'.format(count, int(write_time - start_time)))
+                with open(tf.name, 'r', encoding='utf-8') as tf_reader:
+                    for line in tf_reader:
+                        # json load line with line feed removed, but
+                        # sometimes the last line does not end with a line
+                        # feed, so check
+                        if line[-1] == '\n':
+                            rec = json.loads(line[:-1])
+                        else:
+                            rec = json.loads(line)
+                        try:
+                            rec["transactionalData"] = json.loads(rec["transactionalData"])
+                        except KeyError:
+                            pass
+                        self.update_session_bookmark(rec[self.replication_key])
+                        yield (self.stream, rec)
+                logger.info('Read and emitted {} records from temp file in {} seconds'.format(count, int(time.time() - write_time)))
+
+            self.update_bookmark(state, self.session_bookmark)
+            singer.write_state(state)
 
 
 class Lists(Stream):
@@ -166,90 +198,99 @@ class EmailBounce(Stream):
     name = "email_bounce"
     replication_method = "INCREMENTAL"
     replication_key = "createdAt"
-    key_properties = [ "messageId" ]
+    key_properties = []
+    data_type_name = "emailBounce"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailClick(Stream):
     name = "email_click"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailClick"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailComplaint(Stream):
     name = "email_complaint"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailComplaint"
 
-    def get_replication_value(self, item):
-        try:
-            return item["itblInternal"]["documentUpdatedAt"]
-        except KeyError:
-            return item["createdAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailOpen(Stream):
     name = "email_open"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailOpen"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSend(Stream):
     name = "email_send"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailSend"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSendSkip(Stream):
     name = "email_send_skip"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailSendSkip"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSubscribe(Stream):
     name = "email_subscribe"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailSubscribe"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailUnsubscribe(Stream):
     name = "email_unsubscribe"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "emailUnsubscribe"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class Users(Stream):
     name = "users"
     replication_method = "INCREMENTAL"
-    key_properties = [ "userId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
+    key_properties = []
+    replication_key = "createdAt"
+    data_type_name = "user"
 
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 STREAMS = {
@@ -270,5 +311,3 @@ STREAMS = {
     "email_unsubscribe": EmailUnsubscribe,
     "users": Users
 }
-
-

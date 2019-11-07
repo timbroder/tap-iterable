@@ -1,4 +1,3 @@
-
 #
 # Module dependencies.
 #
@@ -21,7 +20,7 @@ class Iterable(object):
   def __init__(self, api_key, start_date=None, api_window_in_days=30):
     self.api_key = api_key
     self.uri = "https://api.iterable.com/api/"
-    self.api_window_in_days = 30
+    self.api_window_in_days = float(api_window_in_days)
     self.MAX_BYTES = 10240
     self.CHUNK_SIZE = 512
 
@@ -34,9 +33,10 @@ class Iterable(object):
     total_days = (utils.strptime_with_tz(end_date) - utils.strptime_with_tz(start_date)).days
     if total_days >= self.api_window_in_days:
       for n in range(int(total_days / self.api_window_in_days)):
-        yield (utils.strptime_with_tz(start_date) + n * timedelta(int(self.api_window_in_days))).strftime("%Y-%m-%d %H:%M:%S")
+        yield (utils.strptime_with_tz(start_date) + n * timedelta(self.api_window_in_days)).strftime("%Y-%m-%d %H:%M:%S")
     else:
       yield start_date
+
 
   def _get_end_datetime(self, startDateTime):
     endDateTime = utils.strptime_with_tz(startDateTime) + timedelta(self.api_window_in_days)
@@ -47,17 +47,17 @@ class Iterable(object):
     logger.info("Received 429 -- sleeping for %s seconds",
                 details['wait'])
 
-  # 
+  #
   # The actual `get` request.
-  # 
-  
+  #
+
   @backoff.on_exception(backoff.expo,
                         requests.exceptions.HTTPError,
                         on_backoff=retry_handler,
                         max_tries=10)
-  def _get(self, path, stream=False, **kwargs):
+  def _get(self, path, stream=True, **kwargs):
     uri = "{uri}{path}".format(uri=self.uri, path=path)
-    
+
     # Add query params, including `api_key`.
     params = { "api_key": self.api_key }
     for key, value in kwargs.items():
@@ -72,44 +72,10 @@ class Iterable(object):
   #
   # The common `get` request.
   #
-  
+
   def get(self, path, **kwargs):
     response = self._get(path, **kwargs)
     return response.json()
-
-  #
-  # The streaming `get` request. (DEPRECATED)
-  # 
-
-  def get_with_streaming(self, path, **kwargs):
-    # Since the API headers do not return content-size, we will
-    # terminate connection when we exceed a size.
-    total_chunks = 0
-    response = self._get(path, stream=True, **kwargs)
-    for line in response.iter_lines(chunk_size=self.CHUNK_SIZE):
-      if line:
-        yield line.decode('utf-8')
-
-      total_chunks += self.CHUNK_SIZE
-
-      if total_chunks > self.MAX_BYTES:
-        response.close()
-        break
-
-  # 
-  # Get data export endpoint.
-  # 
-  
-  def get_data_export(self, dataTypeName, **kwargs):
-    now = self._now()
-    startDateTime = kwargs["startDateTime"]
-    for start_date_time in self._daterange(startDateTime, now):
-      kwargs["startDateTime"] = start_date_time
-      kwargs["endDateTime"] = self._get_end_datetime(startDateTime=start_date_time)
-      responses = self._get("export/data.json", dataTypeName=dataTypeName, **kwargs)
-      for item in responses.text.split("\n"):
-        if item:
-          yield json.loads(item)
 
   #
   # Get custom user fields, used for generating `users` schema in `discover`.
@@ -118,9 +84,9 @@ class Iterable(object):
   def get_user_fields(self):
     return self.get("users/getFields")
 
-  # 
+  #
   # Methods to retrieve data per stream/resource.
-  # 
+  #
 
   def lists(self, column_name=None, bookmark=None):
     res = self.get("lists")
@@ -131,7 +97,10 @@ class Iterable(object):
   def list_users(self, column_name=None, bookmark=None):
     res = self.get("lists")
     for l in res["lists"]:
-      users = self.get_with_streaming("lists/getUsers", listId=l["id"])
+      kwargs = {
+        "listId": l["id"]
+      }
+      users = self._get("lists/getUsers", **kwargs)
       for user in users:
         yield {
           "email": user,
@@ -187,51 +156,12 @@ class Iterable(object):
         yield value
 
 
-  def email_bounce(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailBounce", startDateTime=bookmark)
-
-
-  def email_click(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailClick", startDateTime=bookmark)
-
-
-  def email_complaint(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailComplaint", startDateTime=bookmark)
-
-
-  def email_open(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailOpen", startDateTime=bookmark)
-
-
-  def email_send(self, column_name=None, bookmark=None):
-    res = self.get_data_export(dataTypeName="emailSend", startDateTime=bookmark)
-    for item in res:
-      try:
-        item["transactionalData"] = json.loads(item["transactionalData"])
-      except KeyError:
-        pass
-      yield item
-
-
-  def email_send_skip(self, column_name=None, bookmark=None):
-    res = self.get_data_export(dataTypeName="emailSendSkip", startDateTime=bookmark)
-    for item in res:
-      try:
-        item["transactionalData"] = json.loads(item["transactionalData"])
-      except KeyError:
-        pass
-      yield item
-
-
-  def email_subscribe(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailSubscribe", startDateTime=bookmark)
-
-
-  def email_unsubscribe(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailUnSubscribe", startDateTime=bookmark)
-
-
-  def users(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="user", startDateTime=bookmark)
-
-
+  def get_data_export_generator(self, data_type_name, bookmark=None):
+    now = self._now()
+    kwargs = {}
+    for start_date_time in self._daterange(bookmark, now):
+      kwargs["startDateTime"] = start_date_time
+      kwargs["endDateTime"] = self._get_end_datetime(startDateTime=start_date_time)
+      def get_data():
+        return self._get("export/data.json", dataTypeName=data_type_name, **kwargs)
+      yield get_data
