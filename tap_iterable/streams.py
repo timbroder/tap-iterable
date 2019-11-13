@@ -123,7 +123,7 @@ class Stream():
         bookmark = self.get_bookmark(state)
         fns = get_generator(self.data_type_name, bookmark)
         for fn in fns:
-            res = fn()
+            res, request_end_date = fn()
             count = 0
             start_time = time.time()
             with tempfile.NamedTemporaryFile() as tf:
@@ -147,7 +147,7 @@ class Stream():
                             rec["transactionalData"] = json.loads(rec["transactionalData"])
                         except KeyError:
                             pass
-                        self.update_session_bookmark(rec[self.replication_key])
+                        self.update_session_bookmark(rec.get(self.replication_key, request_end_date))
                         yield (self.stream, rec)
                 logger.info('Read and emitted {} records from temp file in {} seconds'.format(count, int(time.time() - write_time)))
 
