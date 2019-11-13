@@ -163,6 +163,7 @@ class Lists(Stream):
 class ListUsers(Stream):
     name = "list_users"
     replication_method = "FULL_TABLE"
+    key_properties = []
 
 
 class Campaigns(Stream):
