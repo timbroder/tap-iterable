@@ -90,7 +90,7 @@ def translate_to_schema(fields):
       k_value = k.split(".")[1]
 
       # If key not created, then create.
-      if k_name not in schema["properties"]:
+      if k_name not in schema["properties"] or "properties" not in schema["properties"][k_name]:
         schema["properties"][k_name] = { "type": ["null", "object"], "properties": {} }
 
       schema["properties"][k_name]["properties"][k_value] = get_schema_datatype(v)
